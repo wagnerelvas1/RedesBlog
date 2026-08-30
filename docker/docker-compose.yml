@@ -1,0 +1,80 @@
+name: redesblog
+
+services:
+    app:
+        build:
+            context: ..
+            dockerfile: docker/Dockerfile
+            args:
+                UID: ${UID:-1000}
+                GID: ${GID:-1000}
+        restart: unless-stopped
+        env_file: ../.env
+        volumes:
+            - ..:/var/www/html
+            - /var/www/html/node_modules
+        ports:
+            - "${VITE_PORT:-5173}:5173"
+        depends_on:
+            mysql:
+                condition: service_healthy
+        networks:
+            - redesblog
+
+    nginx:
+        image: nginx:1.29-alpine
+        restart: unless-stopped
+        ports:
+            - "${APP_PORT:-8000}:80"
+        volumes:
+            - ..:/var/www/html:ro
+            - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+        depends_on:
+            - app
+        networks:
+            - redesblog
+
+    mysql:
+        image: mysql:8.4
+        restart: unless-stopped
+        environment:
+            MYSQL_DATABASE: ${DB_DATABASE}
+            MYSQL_USER: ${DB_USERNAME}
+            MYSQL_PASSWORD: ${DB_PASSWORD}
+            MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-${DB_PASSWORD}}
+            MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+        ports:
+            - "${FORWARD_DB_PORT:-3306}:3306"
+        volumes:
+            - mysql-data:/var/lib/mysql
+        healthcheck:
+            test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD}"]
+            interval: 5s
+            timeout: 5s
+            retries: 20
+        networks:
+            - redesblog
+
+    phpmyadmin:
+        image: phpmyadmin:5.2
+        restart: unless-stopped
+        environment:
+            PMA_HOST: mysql
+            PMA_PORT: 3306
+            PMA_USER: ${DB_USERNAME}
+            PMA_PASSWORD: ${DB_PASSWORD}
+            UPLOAD_LIMIT: 64M
+        ports:
+            - "${FORWARD_PHPMYADMIN_PORT:-8080}:80"
+        depends_on:
+            mysql:
+                condition: service_healthy
+        networks:
+            - redesblog
+
+volumes:
+    mysql-data:
+
+networks:
+    redesblog:
+        driver: bridge

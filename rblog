@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+#
+# rblog — the RedesBlog project management wrapper.
+#
+# Every command that creates artifacts (dependencies, migrations, builds,
+# generated files) must go through here, so it always runs inside the
+# containers and with the same environment for everyone.
+#
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="${ROOT}/docker/docker-compose.yml"
+ENV_FILE="${ROOT}/.env"
+ENV_EXAMPLE="${ROOT}/.env.example"
+APP_SERVICE="app"
+
+if [[ -t 1 ]]; then
+    C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+    C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_CYAN=$'\033[36m'
+else
+    C_RESET=''; C_BOLD=''; C_DIM=''; C_RED=''; C_GREEN=''; C_YELLOW=''; C_CYAN=''
+fi
+
+info()  { printf '%s➜%s %s\n' "${C_CYAN}" "${C_RESET}" "$*"; }
+ok()    { printf '%s✔%s %s\n' "${C_GREEN}" "${C_RESET}" "$*"; }
+warn()  { printf '%s!%s %s\n' "${C_YELLOW}" "${C_RESET}" "$*"; }
+fail()  { printf '%s✖%s %s\n' "${C_RED}" "${C_RESET}" "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------- infra -----
+
+docker_bin() {
+    command -v docker >/dev/null 2>&1 || fail "Docker was not found in PATH."
+}
+
+compose() {
+    docker_bin
+    [[ -f "${ENV_FILE}" ]] || fail ".env file not found. Run: ./rblog dev"
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+}
+
+app_is_running() {
+    [[ -n "$(compose ps -q "${APP_SERVICE}" 2>/dev/null)" ]] \
+        && [[ "$(docker inspect -f '{{.State.Running}}' "$(compose ps -q "${APP_SERVICE}")" 2>/dev/null)" == "true" ]]
+}
+
+ensure_app_running() {
+    if ! app_is_running; then
+        info "The '${APP_SERVICE}' container is down. Starting the containers..."
+        compose up -d
+        wait_for_app
+    fi
+}
+
+wait_for_app() {
+    local tries=30
+    until app_is_running || (( tries-- == 0 )); do
+        sleep 1
+    done
+    app_is_running || fail "The '${APP_SERVICE}' container did not start. See: ./rblog logs"
+}
+
+# Runs a command inside the application container.
+in_app() {
+    ensure_app_running
+    local tty_flag=()
+    [[ -t 0 ]] || tty_flag=(-T)
+    compose exec "${tty_flag[@]}" "${APP_SERVICE}" "$@"
+}
+
+# --------------------------------------------------------------- setup ------
+
+setup_env_file() {
+    if [[ -f "${ENV_FILE}" ]]; then
+        ok ".env already exists."
+        return
+    fi
+    [[ -f "${ENV_EXAMPLE}" ]] || fail ".env.example not found."
+    cp "${ENV_EXAMPLE}" "${ENV_FILE}"
+    ok ".env created from .env.example."
+}
+
+setup_app_key() {
+    if grep -q '^APP_KEY=base64:' "${ENV_FILE}"; then
+        ok "APP_KEY is already set."
+        return
+    fi
+    info "Generating APP_KEY..."
+    in_app php artisan key:generate --force
+}
+
+setup_composer() {
+    if [[ -f "${ROOT}/vendor/autoload.php" ]]; then
+        ok "Composer dependencies are already installed."
+        return
+    fi
+    info "Installing Composer dependencies..."
+    in_app composer install --no-interaction --prefer-dist --no-progress
+}
+
+setup_npm() {
+    if in_app test -d node_modules/.bin 2>/dev/null; then
+        ok "npm dependencies are already installed."
+        return
+    fi
+    info "Installing npm dependencies..."
+    in_app npm install
+}
+
+setup_storage_link() {
+    if [[ -L "${ROOT}/public/storage" ]]; then
+        ok "Storage link already exists."
+        return
+    fi
+    info "Creating the storage symlink..."
+    in_app php artisan storage:link
+}
+
+setup_migrations() {
+    info "Running migrations..."
+    in_app php artisan migrate --force
+}
+
+setup_build() {
+    info "Building the assets (npm run build)..."
+    in_app npm run build
+}
+
+# ------------------------------------------------------------- commands -----
+
+cmd_dev() {
+    info "Preparing the RedesBlog development environment..."
+    setup_env_file
+    docker_bin
+    info "Building the Docker images..."
+    compose build
+    info "Starting the containers..."
+    compose up -d
+    wait_for_app
+    setup_composer
+    setup_app_key
+    setup_npm
+    setup_migrations
+    setup_storage_link
+    setup_build
+    printf '\n'
+    ok "Environment ready!"
+    cmd_urls
+}
+
+cmd_urls() {
+    local app_port pma_port
+    app_port="$(get_env APP_PORT 8000)"
+    pma_port="$(get_env FORWARD_PHPMYADMIN_PORT 8080)"
+    printf '\n%sURLs:%s\n' "${C_BOLD}" "${C_RESET}"
+    printf '  Application  http://localhost:%s\n' "${app_port}"
+    printf '  phpMyAdmin   http://localhost:%s\n' "${pma_port}"
+}
+
+get_env() {
+    local key="$1" default="${2-}" value=''
+    if [[ -f "${ENV_FILE}" ]]; then
+        value="$(grep -E "^${key}=" "${ENV_FILE}" | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+    fi
+    printf '%s' "${value:-${default}}"
+}
+
+cmd_up()      { compose up -d "$@"; wait_for_app; ok "Containers are up."; cmd_urls; }
+cmd_down()    { compose down "$@"; ok "Containers stopped."; }
+cmd_restart() { compose restart "$@"; ok "Containers restarted."; }
+cmd_ps()      { compose ps "$@"; }
+cmd_logs()    { compose logs -f "$@"; }
+cmd_build()   { compose build "$@"; ok "Images rebuilt."; }
+
+cmd_shell()   { in_app bash "$@"; }
+cmd_composer(){ in_app composer "$@"; }
+cmd_artisan() { in_app php artisan "$@"; }
+cmd_npm()     { in_app npm "$@"; }
+cmd_php()     { in_app php "$@"; }
+cmd_tinker()  { in_app php artisan tinker "$@"; }
+cmd_test()    { in_app php artisan test --compact "$@"; }
+cmd_pint()    { in_app vendor/bin/pint --format agent "$@"; }
+cmd_stan()    { in_app vendor/bin/phpstan analyse "$@"; }
+cmd_vite()    { in_app npm run dev "$@"; }
+
+cmd_migrate() { in_app php artisan migrate "$@"; }
+cmd_fresh()   { in_app php artisan migrate:fresh --seed "$@"; }
+cmd_seed()    { in_app php artisan db:seed "$@"; }
+
+cmd_mysql() {
+    ensure_app_running
+    local tty_flag=()
+    [[ -t 0 ]] || tty_flag=(-T)
+    compose exec "${tty_flag[@]}" mysql \
+        mysql -u"$(get_env DB_USERNAME root)" -p"$(get_env DB_PASSWORD)" "$(get_env DB_DATABASE)" "$@"
+}
+
+cmd_check() {
+    info "Running lint, static analysis and tests..."
+    in_app composer ci:check
+}
+
+cmd_fresh_install() {
+    warn "This deletes the volumes (database) and rebuilds everything."
+    read -r -p "Continue? [y/N] " answer
+    [[ "${answer,,}" == "y" ]] || { info "Cancelled."; return; }
+    compose down -v
+    cmd_dev
+}
+
+# ------------------------------------------------------------------ help ----
+
+banner() {
+    printf '%s' "${C_CYAN}"
+    cat <<'ART'
+   ____  ____  __     ____  ____
+  |  _ \| __ )| |    / __ \/ ___|
+  | |_) |  _ \| |   | |  | | |  _
+  |  _ <| |_) | |___| |__| | |_| |
+  |_| \_\____/|_____|\____/ \____|
+ART
+    printf '%s' "${C_RESET}"
+    printf '%s  RedesBlog project manager%s\n\n' "${C_DIM}" "${C_RESET}"
+}
+
+# Aligns the columns by character count (not bytes), for accented labels.
+item() {
+    local label="$1" padding=''
+    local width=$(( 24 - ${#label} ))
+    (( width > 0 )) && printf -v padding '%*s' "${width}" ''
+    printf '  %s%s%s%s %s\n' "${C_BOLD}" "${label}" "${C_RESET}" "${padding}" "$2"
+}
+
+usage() {
+    banner
+    printf '%sUsage:%s ./rblog <command> [arguments]\n\n' "${C_BOLD}" "${C_RESET}"
+
+    printf '%sEnvironment%s\n' "${C_YELLOW}" "${C_RESET}"
+    item "dev"                "Prepares and starts the whole environment (.env, dependencies, build, containers)"
+    item "up"                 "Starts the containers"
+    item "down"               "Stops the containers"
+    item "restart"            "Restarts the containers"
+    item "build"              "Rebuilds the Docker images"
+    item "reinstall"          "Deletes the volumes and rebuilds the environment from scratch"
+    item "ps"                 "Lists the container status"
+    item "logs [service]"     "Follows the container logs"
+    item "urls"               "Shows the application and phpMyAdmin URLs"
+    printf '\n'
+
+    printf '%sDevelopment%s\n' "${C_YELLOW}" "${C_RESET}"
+    item "composer <args>"    "Runs Composer inside the container"
+    item "artisan <args>"     "Runs php artisan inside the container"
+    item "npm <args>"         "Runs npm inside the container"
+    item "php <args>"         "Runs PHP inside the container"
+    item "vite"               "Starts the Vite development server"
+    item "shell"              "Opens a shell in the application container"
+    item "tinker"             "Opens Tinker"
+    printf '\n'
+
+    printf '%sDatabase%s\n' "${C_YELLOW}" "${C_RESET}"
+    item "migrate [args]"     "Runs the migrations"
+    item "fresh"              "Recreates the database and runs the seeders"
+    item "seed"               "Runs the seeders"
+    item "mysql"              "Opens the MySQL client on the application database"
+    printf '\n'
+
+    printf '%sQuality%s\n' "${C_YELLOW}" "${C_RESET}"
+    item "test [args]"        "Runs the test suite (Pest)"
+    item "pint [args]"        "Formats the code with Laravel Pint"
+    item "stan [args]"        "Runs static analysis (PHPStan/Larastan)"
+    item "check"              "Runs lint + static analysis + tests"
+    printf '\n'
+
+    printf '%sEvery command that generates artifacts must go through this wrapper.%s\n' "${C_DIM}" "${C_RESET}"
+}
+
+# -------------------------------------------------------------- dispatch ----
+
+main() {
+    local command="${1-}"
+    [[ $# -gt 0 ]] && shift || true
+
+    case "${command}" in
+        ''|help|--help|-h) usage ;;
+        dev)               cmd_dev "$@" ;;
+        up)                cmd_up "$@" ;;
+        down)              cmd_down "$@" ;;
+        restart)           cmd_restart "$@" ;;
+        build)             cmd_build "$@" ;;
+        reinstall)         cmd_fresh_install "$@" ;;
+        ps|status)         cmd_ps "$@" ;;
+        logs)              cmd_logs "$@" ;;
+        urls)              cmd_urls "$@" ;;
+        composer)          cmd_composer "$@" ;;
+        artisan)           cmd_artisan "$@" ;;
+        npm)               cmd_npm "$@" ;;
+        php)               cmd_php "$@" ;;
+        vite)              cmd_vite "$@" ;;
+        shell|bash)        cmd_shell "$@" ;;
+        tinker)            cmd_tinker "$@" ;;
+        migrate)           cmd_migrate "$@" ;;
+        fresh)             cmd_fresh "$@" ;;
+        seed)              cmd_seed "$@" ;;
+        mysql|db)          cmd_mysql "$@" ;;
+        test)              cmd_test "$@" ;;
+        pint|lint)         cmd_pint "$@" ;;
+        stan|types)        cmd_stan "$@" ;;
+        check)             cmd_check "$@" ;;
+        *)
+            printf '%s✖%s Unknown command: %s\n\n' "${C_RED}" "${C_RESET}" "${command}" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
