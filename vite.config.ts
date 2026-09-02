@@ -65,6 +65,10 @@ export default defineConfig({
         htmlWhitespaceSensitivity: 'css',
         ignorePatterns: [
             '.github/**',
+            // Agent-facing docs: owned by their own tooling, not by prettier.
+            '.ai/**',
+            '.claude/**',
+            '.plan/**',
             'composer.json',
             'resources/js/components/ui/*',
             'resources/views/mail/*',

@@ -8,18 +8,18 @@ creates, changes or generates artifacts (dependencies, migrations, generated
 files, builds, caches, tests) MUST be run through the `./rblog` wrapper, from the
 project root:
 
-| Never on the host              | Always like this                   |
-| ------------------------------ | ---------------------------------- |
-| `composer <args>`              | `./rblog composer <args>`          |
-| `php artisan <args>`           | `./rblog artisan <args>`           |
-| `npm <args>`                   | `./rblog npm <args>`               |
-| `php artisan test`             | `./rblog test`                     |
-| `vendor/bin/pint`              | `./rblog pint`                     |
-| `vendor/bin/phpstan analyse`   | `./rblog stan`                     |
-| `php artisan migrate`          | `./rblog migrate`                  |
-| `php artisan tinker`           | `./rblog tinker`                   |
-| `docker compose ...`           | `./rblog up` / `down` / `logs` ... |
-| Starting the environment       | `./rblog dev`                      |
+| Never on the host            | Always like this                   |
+| ---------------------------- | ---------------------------------- |
+| `composer <args>`            | `./rblog composer <args>`          |
+| `php artisan <args>`         | `./rblog artisan <args>`           |
+| `npm <args>`                 | `./rblog npm <args>`               |
+| `php artisan test`           | `./rblog test`                     |
+| `vendor/bin/pint`            | `./rblog pint`                     |
+| `vendor/bin/phpstan analyse` | `./rblog stan`                     |
+| `php artisan migrate`        | `./rblog migrate`                  |
+| `php artisan tinker`         | `./rblog tinker`                   |
+| `docker compose ...`         | `./rblog up` / `down` / `logs` ... |
+| Starting the environment     | `./rblog dev`                      |
 
 Run `./rblog` with no arguments to see the full list of commands.
 
@@ -46,6 +46,7 @@ The Laravel Boost guidelines are specifically curated by Laravel maintainers for
 This application is a Laravel application running on PHP 8.5. You are an expert with the Laravel ecosystem. Always use the APIs that match the installed major version of each package — do not assume a version.
 
 Before relying on a package's API, confirm its installed version:
+
 - PHP packages: run `composer show --direct` to list direct dependencies with versions, or `composer show <vendor/package>` for a single package.
 - JS packages: check `package.json` for the installed versions.
 
@@ -121,7 +122,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
 - Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
+    - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
 
 === php rules ===
 

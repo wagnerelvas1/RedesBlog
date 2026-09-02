@@ -17,11 +17,12 @@ RUN apk add --no-cache \
         libjpeg-turbo-dev \
         freetype-dev \
         oniguruma-dev \
-        mysql-client \
+        libpq \
+        postgresql-client \
         nodejs \
         npm \
         shadow \
-    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
@@ -29,7 +30,8 @@ RUN apk add --no-cache \
         gd \
         intl \
         pcntl \
-        pdo_mysql \
+        pdo_pgsql \
+        pgsql \
         zip \
     && apk del .build-deps \
     && npm install --global corepack@latest \

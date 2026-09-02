@@ -1,5 +1,3 @@
 {
-  "enabledMcpjsonServers": [
-    "laravel-boost"
-  ]
+    "enabledMcpjsonServers": ["laravel-boost"]
 }

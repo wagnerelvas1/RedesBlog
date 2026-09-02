@@ -4,6 +4,27 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
+        {{-- Applies the stored theme before first paint so there is no flash. --}}
+        <script>
+            (function () {
+                var stored = null;
+
+                try {
+                    stored = localStorage.getItem('appearance');
+                } catch (error) {
+                    stored = null;
+                }
+
+                var appearance = stored || '{{ $appearance ?? 'system' }}';
+                var dark =
+                    appearance === 'dark' ||
+                    (appearance === 'system' &&
+                        window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+                document.documentElement.classList.toggle('dark', dark);
+            })();
+        </script>
+
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">

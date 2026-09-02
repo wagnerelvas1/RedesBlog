@@ -3,9 +3,80 @@
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
-@theme {
+/* The `.dark` class is set on <html> by the blade template and the appearance
+   hook, so the dark variant follows the class instead of the media query. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic surface/text tokens. Components never hardcode a hex value —
+   they use bg-surface, text-muted, border-border, and so on. */
+:root {
+    --rb-bg: #f6f7f8;
+    --rb-surface: #ffffff;
+    --rb-surface-2: #f0f2f5;
+    --rb-border: #ccced1;
+    --rb-text: #1c1c1c;
+    --rb-text-muted: #64666a;
+    --rb-primary: #ff4500;
+    --rb-primary-contrast: #ffffff;
+    --rb-upvote: #ff4500;
+    --rb-downvote: #5a76d6;
+    --rb-focus: #ff450099;
+}
+
+.dark {
+    --rb-bg: #030303;
+    --rb-surface: #1a1a1b;
+    --rb-surface-2: #272729;
+    --rb-border: #343536;
+    --rb-text: #d7dadc;
+    --rb-text-muted: #9b9ea1;
+    --rb-primary: #ff4500;
+    --rb-primary-contrast: #ffffff;
+    --rb-upvote: #ff4500;
+    --rb-downvote: #7193ff;
+    --rb-focus: #ff4500aa;
+}
+
+@theme inline {
     --font-sans:
         'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
+
+    --color-bg: var(--rb-bg);
+    --color-surface: var(--rb-surface);
+    --color-surface-2: var(--rb-surface-2);
+    --color-border: var(--rb-border);
+    --color-text: var(--rb-text);
+    --color-muted: var(--rb-text-muted);
+    --color-primary: var(--rb-primary);
+    --color-primary-contrast: var(--rb-primary-contrast);
+    --color-upvote: var(--rb-upvote);
+    --color-downvote: var(--rb-downvote);
+    --color-focus: var(--rb-focus);
+}
+
+@layer base {
+    body {
+        background-color: var(--rb-bg);
+        color: var(--rb-text);
+    }
+
+    /* Every interactive element keeps a visible, consistent focus ring. */
+    :focus-visible {
+        outline: 2px solid var(--rb-focus);
+        outline-offset: 2px;
+    }
+}
+
+/* Respect the user's motion preference for the skeleton pulse and transitions. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
